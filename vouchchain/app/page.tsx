@@ -8,7 +8,7 @@ import SigningEngine from "./components/SigningEngine";
 function PactManagerContent() {
   const searchParams = useSearchParams();
   
-  // App states
+  // Core application tracking states
   const [pactText, setPactText] = useState("");
   const [isViewerMode, setIsViewerMode] = useState(false);
   const [urlCreatorAddress, setUrlCreatorAddress] = useState("");
@@ -17,11 +17,11 @@ function PactManagerContent() {
   const [finalReceipt, setFinalReceipt] = useState<any | null>(null);
   const [pactHistory, setPactHistory] = useState<any[]>([]);
 
-  // Verification states
+  // Cryptographic identity flags
   const [isUser1Valid, setIsUser1Valid] = useState<boolean | null>(null);
   const [isUser2Valid, setIsUser2Valid] = useState<boolean | null>(null);
 
-  // Load ledger items from localStorage
+  // 1. Initial boot: Hydrate ledger timeline from local system storage
   useEffect(() => {
     const savedPacts = localStorage.getItem("vouchchain_history");
     if (savedPacts) {
@@ -33,21 +33,41 @@ function PactManagerContent() {
     }
   }, []);
 
-  // Parse incoming sharing parameters
+  // 2. Parse Decentralized CID router query parameter
   useEffect(() => {
-    const encodedPact = searchParams.get("pact");
+    const pactId = searchParams.get("id");
+    if (!pactId) return;
+
+    // Check if we have this specific contract hash saved inside our history log cache
+    const savedPacts = localStorage.getItem("vouchchain_history");
+    if (savedPacts) {
+      const historyArr = JSON.parse(savedPacts);
+      const match = historyArr.find((item: any) => item.id === pactId);
+      
+      if (match) {
+        setPactText(match.pact);
+        setUrlCreatorAddress(match.user1);
+        setUrlCreatorSignature(match.user1Signature);
+        setIsViewerMode(true);
+        return;
+      }
+    }
+
+    // Fallback path: If it's a completely fresh session on User 2's end,
+    // we extract structural parameters safely from the backup payload array.
+    const fallbackPact = searchParams.get("pact");
     const creator = searchParams.get("user1");
     const signature = searchParams.get("sig1");
 
-    if (encodedPact && creator && signature) {
-      setPactText(decodeURIComponent(encodedPact));
+    if (fallbackPact && creator && signature) {
+      setPactText(decodeURIComponent(fallbackPact));
       setUrlCreatorAddress(creator);
       setUrlCreatorSignature(signature);
       setIsViewerMode(true);
     }
   }, [searchParams]);
 
-  // Run cryptographic signature validation math on load or state shift
+  // 3. Cryptographic Signature Evaluator
   useEffect(() => {
     if (!finalReceipt) {
       setIsUser1Valid(null);
@@ -57,7 +77,6 @@ function PactManagerContent() {
 
     const checkSignatures = async () => {
       try {
-        // Mathematically verify User 1's signature hash against the text
         const valid1 = await verifyMessage({
           address: finalReceipt.creator.address,
           message: finalReceipt.pact,
@@ -65,15 +84,14 @@ function PactManagerContent() {
         });
         setIsUser1Valid(valid1);
 
-        // Mathematically verify User 2's signature hash against the text
         const valid2 = await verifyMessage({
           address: finalReceipt.countersigner.address,
-          message: finalReceipt.pact,
+          message: finalReceipt.pact, 
           signature: finalReceipt.countersigner.signature,
         });
         setIsUser2Valid(valid2);
       } catch (err) {
-        console.error("Crypto signature verification execution failure", err);
+        console.error("Signature verification error", err);
         setIsUser1Valid(false);
         setIsUser2Valid(false);
       }
@@ -82,11 +100,11 @@ function PactManagerContent() {
     checkSignatures();
   }, [finalReceipt]);
 
-  const handlePactComplete = (payload: any) => {
+  const handlePactComplete = (payload: any, generatedId: string) => {
     setFinalReceipt(payload);
 
     const newHistoryItem = {
-      id: `pact-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      id: generatedId,
       date: new Date(payload.timestamp).toLocaleDateString(),
       pact: payload.pact,
       user1: payload.creator.address,
@@ -94,9 +112,7 @@ function PactManagerContent() {
       user1Signature: payload.creator.signature,
       user2Signature: payload.countersigner.signature,
       createdAt: payload.timestamp,
-      updatedAt: payload.timestamp,
-      nonce: Math.random().toString(36).substring(2, 15),
-      chainId: 1
+      updatedAt: payload.timestamp
     };
 
     const updatedHistory = [newHistoryItem, ...pactHistory];
@@ -121,7 +137,7 @@ function PactManagerContent() {
 
       <div className="w-full max-w-xl space-y-8">
         
-        {/* --- CONDITION A: DUAL SIGNATURE CRYPTO RECEIPT --- */}
+        {/* --- CONDITION A: CRYPTO RECEIPT VIEW --- */}
         {finalReceipt ? (
           <div className="p-8 bg-zinc-950 border border-emerald-500/20 rounded-2xl space-y-8 text-white shadow-2xl">
             <div className="space-y-2">
@@ -132,19 +148,16 @@ function PactManagerContent() {
             </div>
 
             <div className="space-y-5 border-t border-zinc-900 pt-6 text-sm">
-              {/* User 1 Verified Block */}
               <div className="space-y-2">
                 <div className="flex justify-between text-xs font-bold text-zinc-400 uppercase tracking-wider">
                   <span>Initiator Address</span>
-                  <span className={`font-mono text-xs ${isUser1Valid ? "text-emerald-400" : isUser1Valid === false ? "text-rose-500" : "text-zinc-500"}`}>
-                    {isUser1Valid ? "✓ math verified" : isUser1Valid === false ? "✕ verification failed" : "checking math..."}
+                  <span className={`font-mono text-xs ${isUser1Valid ? "text-emerald-400" : "text-zinc-500"}`}>
+                    {isUser1Valid ? "✓ math verified" : "checking math..."}
                   </span>
                 </div>
                 <p className="font-mono bg-zinc-900 p-3 rounded-lg text-zinc-300 text-sm truncate">{finalReceipt.creator.address}</p>
-                <p className="font-mono text-[11px] text-zinc-600 truncate">Sig: {finalReceipt.creator.signature}</p>
               </div>
 
-              {/* User 2 Verified Block */}
               <div className="space-y-2 pt-3 border-t border-zinc-900/60">
                 <div className="flex justify-between text-xs font-bold text-zinc-400 uppercase tracking-wider">
                   <span>Countersigner Address</span>
@@ -153,19 +166,21 @@ function PactManagerContent() {
                   </span>
                 </div>
                 <p className="font-mono bg-zinc-900 p-3 rounded-lg text-zinc-300 text-sm truncate">{finalReceipt.countersigner.address}</p>
-                <p className="font-mono text-[11px] text-zinc-600 truncate">Sig: {finalReceipt.countersigner.signature}</p>
               </div>
             </div>
 
             <button 
-              onClick={() => setFinalReceipt(null)} 
+              onClick={() => {
+                setFinalReceipt(null);
+                window.history.pushState({}, "", window.location.origin); // Wipe route clear cleanly
+              }} 
               className="w-full bg-zinc-900 text-zinc-300 py-3 rounded-xl text-sm hover:bg-zinc-800 font-semibold border border-zinc-800 transition"
             >
               ← Back to Dashboard
             </button>
           </div>
         ) : (
-          // --- CONDITION B: INTERACTIVE WORKFLOW ---
+          // --- CONDITION B: WORKFLOW ---
           <>
             <div className="space-y-3">
               <label className="block text-zinc-400 text-sm font-bold uppercase tracking-wider">
@@ -194,7 +209,7 @@ function PactManagerContent() {
           </>
         )}
 
-        {/* --- GLOBAL SECTION: HISTORICAL LEDGER TIMELINE --- */}
+        {/* --- TIMELINE HISTORY LEDGER FEED --- */}
         {!isViewerMode && pactHistory.length > 0 && (
           <div className="pt-8 border-t border-zinc-900 space-y-4">
             <h3 className="text-xs font-bold uppercase tracking-widest text-zinc-500">
@@ -217,8 +232,8 @@ function PactManagerContent() {
                     "{item.pact}"
                   </p>
                   <div className="flex justify-between items-center text-xs text-zinc-500 font-mono">
-                    <span>{item.date}</span>
-                    <span className="text-emerald-500 text-[10px] uppercase tracking-wider font-bold bg-emerald-950/20 px-2 py-0.5 rounded border border-emerald-900/30">
+                    <span className="text-[11px] text-zinc-600 truncate max-w-[280px]">CID: {item.id}</span>
+                    <span className="text-emerald-500 text-[10px] uppercase tracking-wider font-bold bg-emerald-950/20 px-2 py-0.5 rounded border border-emerald-900/30 shrink-0">
                       Sealed 🔒
                     </span>
                   </div>

@@ -3,13 +3,14 @@
 import { useState } from "react";
 import { usePrivy } from "@privy-io/react-auth";
 import { useWallets } from "@privy-io/react-auth";
+import { generateContentHash } from "../utils/crypto";
 
 interface SigningEngineProps {
   currentPactText: string;
   isViewerMode: boolean;
   urlCreatorAddress: string;
   urlCreatorSignature: string;
-  onPactComplete: (payload: any) => void;
+  onPactComplete: (payload: any, generatedId: string) => void;
 }
 
 export default function SigningEngine({ 
@@ -22,69 +23,62 @@ export default function SigningEngine({
   const { login, logout, authenticated, user } = usePrivy();
   const { wallets } = useWallets();
   
-  // Local interface UI states
   const [generatedShareLink, setGeneratedShareLink] = useState("");
   const [isCopied, setIsCopied] = useState(false);
   const [finalExecutionPayload, setFinalExecutionPayload] = useState<any | null>(null);
 
-  // Helper function to handle clipboard copy events smoothly
   const handleCopyLink = async () => {
     try {
       await navigator.clipboard.writeText(generatedShareLink);
       setIsCopied(true);
-      setTimeout(() => setIsCopied(false), 2000); // Snap back after 2 seconds
+      setTimeout(() => setIsCopied(false), 2000);
     } catch (err) {
-      console.error("Clipboard copy failed:", err);
+      console.error("Clipboard copy failure:", err);
     }
   };
 
   const handleSignPact = async () => {
-    if (!currentPactText.trim()) {
-      alert("Please type a pact statement into the textbox first!");
-      return;
-    }
-
+    if (!currentPactText.trim()) return;
     const embeddedWallet = wallets[0];
-    if (!embeddedWallet) {
-      alert("No wallet found. Please log in first.");
-      return;
-    }
+    if (!embeddedWallet) return;
 
     try {
       const provider = await embeddedWallet.getEthereumProvider();
-      
       const signature = await provider.request({
         method: "personal_sign",
         params: [currentPactText, embeddedWallet.address],
       }) as string;
       
       if (!isViewerMode) {
-        // --- USER 1 FLOW ---
-        const encodedText = encodeURIComponent(currentPactText);
-        const shareUrl = `${window.location.origin}?pact=${encodedText}&user1=${embeddedWallet.address}&sig1=${signature}`;
+        // --- USER 1 PATH: Generate Core Data Object & Compute CID Hash Locally ---
+        const initialPayload = {
+          pact: currentPactText,
+          creator: embeddedWallet.address,
+          signature: signature,
+          timestamp: Date.now()
+        };
         
+        const ipfsCID = await generateContentHash(initialPayload);
+        const encodedText = encodeURIComponent(currentPactText);
+        
+        // Build a sleek router string anchored by our deterministic decentralized ID
+        const shareUrl = `${window.location.origin}?id=${ipfsCID}&pact=${encodedText}&user1=${embeddedWallet.address}&sig1=${signature}`;
         setGeneratedShareLink(shareUrl);
       } else {
-        // --- USER 2 FLOW ---
+        // --- USER 2 PATH: Complete Handshake receipt ---
         const compactPactReceipt = {
           pact: currentPactText,
           timestamp: Date.now(),
-          creator: {
-            address: urlCreatorAddress,
-            signature: urlCreatorSignature
-          },
-          countersigner: {
-            address: embeddedWallet.address,
-            signature: signature
-          }
+          creator: { address: urlCreatorAddress, signature: urlCreatorSignature },
+          countersigner: { address: embeddedWallet.address, signature: signature }
         };
         
+        const finalizedCID = await generateContentHash(compactPactReceipt);
         setFinalExecutionPayload(compactPactReceipt);
-        onPactComplete(compactPactReceipt);
+        onPactComplete(compactPactReceipt, finalizedCID);
       }
-      
     } catch (error) {
-      console.error("Signing failed:", error);
+      console.error("Signing sequence thrown:", error);
     }
   };
 
@@ -97,7 +91,7 @@ export default function SigningEngine({
       {!authenticated ? (
         <button 
           onClick={login}
-          className="w-full bg-white text-black font-semibold py-4 px-4 rounded-xl hover:bg-zinc-200 transition text-base"
+          className="w-full bg-white text-black font-semibold py-4 px-4 rounded-xl hover:bg-zinc-200 transition text-base shadow-md"
         >
           Log In / Sign Up to Review
         </button>
@@ -128,7 +122,6 @@ export default function SigningEngine({
             </button>
           )}
 
-          {/* User 1 Share UI Output with Upgraded Copy Button */}
           {generatedShareLink && (
             <div className="pt-6 border-t border-zinc-800 space-y-3">
               <label className="block text-zinc-400 text-xs font-bold uppercase tracking-wider">
