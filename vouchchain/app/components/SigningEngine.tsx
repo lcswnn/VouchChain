@@ -9,22 +9,34 @@ interface SigningEngineProps {
   isViewerMode: boolean;
   urlCreatorAddress: string;
   urlCreatorSignature: string;
-  onPactComplete?: (payload: any) => void;
+  onPactComplete: (payload: any) => void;
 }
 
 export default function SigningEngine({ 
   currentPactText, 
   isViewerMode, 
   urlCreatorAddress, 
-  urlCreatorSignature, 
+  urlCreatorSignature,
   onPactComplete
 }: SigningEngineProps) {
   const { login, logout, authenticated, user } = usePrivy();
   const { wallets } = useWallets();
   
-  // State to hold generated invite links or completion outputs
+  // Local interface UI states
   const [generatedShareLink, setGeneratedShareLink] = useState("");
+  const [isCopied, setIsCopied] = useState(false);
   const [finalExecutionPayload, setFinalExecutionPayload] = useState<any | null>(null);
+
+  // Helper function to handle clipboard copy events smoothly
+  const handleCopyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(generatedShareLink);
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000); // Snap back after 2 seconds
+    } catch (err) {
+      console.error("Clipboard copy failed:", err);
+    }
+  };
 
   const handleSignPact = async () => {
     if (!currentPactText.trim()) {
@@ -41,21 +53,19 @@ export default function SigningEngine({
     try {
       const provider = await embeddedWallet.getEthereumProvider();
       
-      console.log(`Executing signature for wallet: ${embeddedWallet.address}`);
       const signature = await provider.request({
         method: "personal_sign",
         params: [currentPactText, embeddedWallet.address],
       }) as string;
       
       if (!isViewerMode) {
-        // --- USER 1 FLOW: Create the shareable link ---
+        // --- USER 1 FLOW ---
         const encodedText = encodeURIComponent(currentPactText);
         const shareUrl = `${window.location.origin}?pact=${encodedText}&user1=${embeddedWallet.address}&sig1=${signature}`;
         
         setGeneratedShareLink(shareUrl);
-        alert("✨ Step 1 Signed! Share link generated below.");
       } else {
-        // --- USER 2 FLOW: Finalize the dual-signed transaction package ---
+        // --- USER 2 FLOW ---
         const compactPactReceipt = {
           pact: currentPactText,
           timestamp: Date.now(),
@@ -70,9 +80,7 @@ export default function SigningEngine({
         };
         
         setFinalExecutionPayload(compactPactReceipt);
-        onPactComplete?.(compactPactReceipt);
-        console.log("🔒 FULLY VERIFIED DUAL-SIGNED PACT OBJECT:", compactPactReceipt);
-        alert("🎉 PACT SECURED! Both participants have verified identities cryptographically.");
+        onPactComplete(compactPactReceipt);
       }
       
     } catch (error) {
@@ -89,20 +97,20 @@ export default function SigningEngine({
       {!authenticated ? (
         <button 
           onClick={login}
-          className="w-full bg-white text-black font-semibold py-2 px-4 rounded-xl hover:bg-zinc-200 transition"
+          className="w-full bg-white text-black font-semibold py-4 px-4 rounded-xl hover:bg-zinc-200 transition text-base"
         >
           Log In / Sign Up to Review
         </button>
       ) : (
-        <div className="space-y-4">
-          <div className="p-3 bg-zinc-950 border border-zinc-800 rounded-lg text-xs space-y-1 text-zinc-400">
+        <div className="space-y-6">
+          <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-lg text-sm space-y-2 text-zinc-400">
             <p>Your Account: <span className="text-zinc-200 font-mono">{user?.email?.address || user?.google?.email}</span></p>
             <p>Your Address: <span className="text-zinc-200 font-mono block truncate">{wallets[0]?.address}</span></p>
           </div>
 
           {isViewerMode && (
-            <div className="p-3 bg-emerald-950/20 border border-emerald-900/30 rounded-lg text-xs space-y-1 text-emerald-400">
-              <p className="font-bold uppercase tracking-wider text-[10px]">Pact Initiated By:</p>
+            <div className="p-4 bg-emerald-950/20 border border-emerald-900/30 rounded-lg text-sm space-y-2 text-emerald-400">
+              <p className="font-bold uppercase tracking-wider text-xs">Pact Initiated By:</p>
               <p className="font-mono block truncate text-zinc-300">{urlCreatorAddress}</p>
             </div>
           )}
@@ -110,7 +118,7 @@ export default function SigningEngine({
           {!finalExecutionPayload && (
             <button 
               onClick={handleSignPact}
-              className={`w-full font-semibold py-3 px-4 rounded-xl transition shadow-lg ${
+              className={`w-full font-bold py-4 px-4 rounded-xl transition shadow-lg text-base ${
                 isViewerMode 
                   ? "bg-amber-600 hover:bg-amber-500 shadow-amber-900/20" 
                   : "bg-emerald-600 hover:bg-emerald-500 shadow-emerald-900/20"
@@ -120,34 +128,43 @@ export default function SigningEngine({
             </button>
           )}
 
-          {/* User 1 Share UI Output */}
+          {/* User 1 Share UI Output with Upgraded Copy Button */}
           {generatedShareLink && (
-            <div className="pt-4 border-t border-zinc-800 space-y-2">
-              <label className="block text-zinc-400 text-[11px] font-semibold uppercase tracking-wider">
+            <div className="pt-6 border-t border-zinc-800 space-y-3">
+              <label className="block text-zinc-400 text-xs font-bold uppercase tracking-wider">
                 Send this link to your friend:
               </label>
-              <input 
-                type="text" 
-                readOnly 
-                value={generatedShareLink}
-                onClick={(e) => (e.target as HTMLInputElement).select()}
-                className="w-full p-2 bg-zinc-950 text-zinc-300 border border-zinc-800 rounded-lg text-xs font-mono focus:outline-none focus:border-zinc-700"
-              />
-              <p className="text-[10px] text-zinc-500 italic">Click the input box to select all, copy it, and send it over!</p>
+              <div className="flex gap-2">
+                <input 
+                  type="text" 
+                  readOnly 
+                  value={generatedShareLink}
+                  className="flex-1 p-3 bg-zinc-950 text-zinc-400 border border-zinc-800 rounded-lg text-sm font-mono focus:outline-none truncate"
+                />
+                <button
+                  onClick={handleCopyLink}
+                  className={`px-5 font-semibold text-sm rounded-lg transition border shrink-0 ${
+                    isCopied 
+                      ? "bg-emerald-950/40 text-emerald-400 border-emerald-500/30" 
+                      : "bg-zinc-800 text-zinc-200 border-zinc-700 hover:bg-zinc-700"
+                  }`}
+                >
+                  {isCopied ? "Copied! ✓" : "Copy Link"}
+                </button>
+              </div>
             </div>
           )}
 
-          {/* User 2 Completion Display Box Placeholder */}
           {finalExecutionPayload && (
-            <div className="pt-4 border-t border-emerald-900 space-y-2 text-center">
-              <div className="text-emerald-500 font-bold text-sm">🔒 Immutable Agreement Sealed</div>
-              <p className="text-xs text-zinc-400">Both digital signatures have been bound to this message payload.</p>
+            <div className="pt-6 border-t border-emerald-900 space-y-2 text-center">
+              <div className="text-emerald-500 font-bold text-base">🔒 Immutable Agreement Sealed</div>
+              <p className="text-sm text-zinc-400">Both digital signatures have been bound to this message payload.</p>
             </div>
           )}
 
           <button 
             onClick={logout}
-            className="w-full bg-zinc-800/40 text-zinc-500 font-medium py-1.5 px-4 rounded-xl hover:bg-zinc-800 transition text-xs"
+            className="w-full bg-zinc-800/40 text-zinc-400 font-medium py-2.5 px-4 rounded-xl hover:bg-zinc-800 transition text-sm"
           >
             Log Out
           </button>

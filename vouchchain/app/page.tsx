@@ -2,6 +2,7 @@
 
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
+import { verifyMessage } from "viem";
 import SigningEngine from "./components/SigningEngine";
 
 function PactManagerContent() {
@@ -16,7 +17,11 @@ function PactManagerContent() {
   const [finalReceipt, setFinalReceipt] = useState<any | null>(null);
   const [pactHistory, setPactHistory] = useState<any[]>([]);
 
-  // Load history from localStorage on initial boot
+  // Verification states
+  const [isUser1Valid, setIsUser1Valid] = useState<boolean | null>(null);
+  const [isUser2Valid, setIsUser2Valid] = useState<boolean | null>(null);
+
+  // Load ledger items from localStorage
   useEffect(() => {
     const savedPacts = localStorage.getItem("vouchchain_history");
     if (savedPacts) {
@@ -28,7 +33,7 @@ function PactManagerContent() {
     }
   }, []);
 
-  // Parse incoming URL parameters for shared links
+  // Parse incoming sharing parameters
   useEffect(() => {
     const encodedPact = searchParams.get("pact");
     const creator = searchParams.get("user1");
@@ -42,7 +47,41 @@ function PactManagerContent() {
     }
   }, [searchParams]);
 
-  // Add an item to local history list
+  // Run cryptographic signature validation math on load or state shift
+  useEffect(() => {
+    if (!finalReceipt) {
+      setIsUser1Valid(null);
+      setIsUser2Valid(null);
+      return;
+    }
+
+    const checkSignatures = async () => {
+      try {
+        // Mathematically verify User 1's signature hash against the text
+        const valid1 = await verifyMessage({
+          address: finalReceipt.creator.address,
+          message: finalReceipt.pact,
+          signature: finalReceipt.creator.signature,
+        });
+        setIsUser1Valid(valid1);
+
+        // Mathematically verify User 2's signature hash against the text
+        const valid2 = await verifyMessage({
+          address: finalReceipt.countersigner.address,
+          message: finalReceipt.pact,
+          signature: finalReceipt.countersigner.signature,
+        });
+        setIsUser2Valid(valid2);
+      } catch (err) {
+        console.error("Crypto signature verification execution failure", err);
+        setIsUser1Valid(false);
+        setIsUser2Valid(false);
+      }
+    };
+
+    checkSignatures();
+  }, [finalReceipt]);
+
   const handlePactComplete = (payload: any) => {
     setFinalReceipt(payload);
 
@@ -67,7 +106,6 @@ function PactManagerContent() {
 
   return (
     <main className="min-h-screen bg-black flex flex-col items-center justify-start p-6 pt-24 selection:bg-emerald-500/30">
-      {/* Scaled Heading Section */}
       <div className="text-center mb-10 space-y-3">
         <h1 className="text-6xl font-black tracking-tighter text-white">
           VOUCHCHAIN
@@ -81,10 +119,9 @@ function PactManagerContent() {
         </p>
       </div>
 
-      {/* Main UI Container - Bumped up max width from max-w-md (28rem) to max-w-xl (36rem) */}
       <div className="w-full max-w-xl space-y-8">
         
-        {/* --- CONDITION A: DUAL SIGNATURE RECEIPT DISPLAY --- */}
+        {/* --- CONDITION A: DUAL SIGNATURE CRYPTO RECEIPT --- */}
         {finalReceipt ? (
           <div className="p-8 bg-zinc-950 border border-emerald-500/20 rounded-2xl space-y-8 text-white shadow-2xl">
             <div className="space-y-2">
@@ -95,20 +132,28 @@ function PactManagerContent() {
             </div>
 
             <div className="space-y-5 border-t border-zinc-900 pt-6 text-sm">
+              {/* User 1 Verified Block */}
               <div className="space-y-2">
                 <div className="flex justify-between text-xs font-bold text-zinc-400 uppercase tracking-wider">
                   <span>Initiator Address</span>
-                  <span className="text-emerald-400 font-mono lowercase">verified ✓</span>
+                  <span className={`font-mono text-xs ${isUser1Valid ? "text-emerald-400" : isUser1Valid === false ? "text-rose-500" : "text-zinc-500"}`}>
+                    {isUser1Valid ? "✓ math verified" : isUser1Valid === false ? "✕ verification failed" : "checking math..."}
+                  </span>
                 </div>
                 <p className="font-mono bg-zinc-900 p-3 rounded-lg text-zinc-300 text-sm truncate">{finalReceipt.creator.address}</p>
+                <p className="font-mono text-[11px] text-zinc-600 truncate">Sig: {finalReceipt.creator.signature}</p>
               </div>
 
+              {/* User 2 Verified Block */}
               <div className="space-y-2 pt-3 border-t border-zinc-900/60">
                 <div className="flex justify-between text-xs font-bold text-zinc-400 uppercase tracking-wider">
                   <span>Countersigner Address</span>
-                  <span className="text-emerald-400 font-mono lowercase">verified ✓</span>
+                  <span className={`font-mono text-xs ${isUser2Valid ? "text-emerald-400" : isUser2Valid === false ? "text-rose-500" : "text-zinc-500"}`}>
+                    {isUser2Valid ? "✓ math verified" : isUser2Valid === false ? "✕ verification failed" : "checking math..."}
+                  </span>
                 </div>
                 <p className="font-mono bg-zinc-900 p-3 rounded-lg text-zinc-300 text-sm truncate">{finalReceipt.countersigner.address}</p>
+                <p className="font-mono text-[11px] text-zinc-600 truncate">Sig: {finalReceipt.countersigner.signature}</p>
               </div>
             </div>
 
