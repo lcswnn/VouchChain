@@ -9,13 +9,15 @@ interface SigningEngineProps {
   isViewerMode: boolean;
   urlCreatorAddress: string;
   urlCreatorSignature: string;
+  onPactComplete?: (payload: any) => void;
 }
 
 export default function SigningEngine({ 
   currentPactText, 
   isViewerMode, 
   urlCreatorAddress, 
-  urlCreatorSignature 
+  urlCreatorSignature, 
+  onPactComplete
 }: SigningEngineProps) {
   const { login, logout, authenticated, user } = usePrivy();
   const { wallets } = useWallets();
@@ -68,6 +70,7 @@ export default function SigningEngine({
         };
         
         setFinalExecutionPayload(compactPactReceipt);
+        onPactComplete?.(compactPactReceipt);
         console.log("🔒 FULLY VERIFIED DUAL-SIGNED PACT OBJECT:", compactPactReceipt);
         alert("🎉 PACT SECURED! Both participants have verified identities cryptographically.");
       }
@@ -78,8 +81,8 @@ export default function SigningEngine({
   };
 
   return (
-    <div className="w-full max-w-md p-6 bg-zinc-900 border border-zinc-800 text-white rounded-xl shadow-md space-y-4">
-      <h2 className="text-xl font-bold tracking-tight">
+    <div className="w-full p-8 bg-zinc-900 border border-zinc-800 text-white rounded-xl shadow-xl space-y-6">
+      <h2 className="text-2xl font-bold tracking-tight">
         {isViewerMode ? "Step 2: Counter-Verification" : "VouchChain Engine"}
       </h2>
       
